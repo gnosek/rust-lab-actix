@@ -1,0 +1,27 @@
+[package]
+name = "actix-todo"
+version = "0.1.0"
+authors = ["Grzegorz Nosek <root@localdomain.pl>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[features]
+# enable this feature to run tests that require a Redis connection:
+# REDIS_TEST_URL=redis://127.0.0.1:6379/2 cargo test --features=redis_tests -- --test-threads=1
+# Note: we need to run the tests in single-threaded mode (by default they run in parallel)
+# because we're accessing the same Redis database from each of them and the tests rely on
+# having exclusive access
+redis_tests = []
+
+[dependencies]
+actix-http = "3.0.0-beta.6"
+actix-web = "4.0.0-beta.6"
+actix-rt = "2"
+async-trait = "*"
+futures = "0.3"
+redis = { version = "0.20", features = ["aio", "tokio-comp", "connection-manager"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
