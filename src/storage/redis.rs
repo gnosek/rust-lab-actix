@@ -156,18 +156,17 @@ impl TodoStore for RedisStorage {
 
     /// Delete a todo entry
     async fn delete(&self, id: usize) -> Result<bool> {
-        // your turn!
-        // Implement this method. It will need to:
-        // 1. get a mutable Redis connection
-        // 2. format a todo id string (like `create()` and `mark_done()`)
-        // 3. remove the id (as string) from the Redis set `todos`
-        //    hint: use the `srem` method on the connection object
-        //    `srem()` takes the set name and the item as parameters
-        // 4. remove the todo object itself (use the `del` method)
-        // 5. return Ok(true)/Ok(false) depending on whether the object
-        //    has been deleted
-        //    hint: `del()` returns the number of deleted objects
-        todo!()
+        let mut conn = self.connection.clone();
+        let todo_id_str = format!("todo:{}", id);
+
+        conn.srem("todos", &todo_id_str).await?;
+
+        // since Redis operations can return different data types,
+        // we need to tell the compiler what type we expect here
+        // (the redis library will handle the conversion for us)
+        let deleted: usize = conn.del(&todo_id_str).await?;
+
+        Ok(deleted > 0)
     }
 }
 
