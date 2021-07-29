@@ -3,7 +3,7 @@ use crate::storage::redis::RedisStorage;
 use crate::storage::{Todo, TodoStore};
 use actix_web::http::StatusCode;
 use actix_web::web::{Data, ServiceConfig};
-use actix_web::{web, HttpResponse, Responder, ResponseError, Result};
+use actix_web::{guard, web, HttpResponse, Responder, ResponseError, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -66,6 +66,17 @@ async fn index() -> impl Responder {
 async fn list<S: TodoStore>(store: web::Data<S>) -> Result<web::Json<BTreeMap<usize, Todo>>> {
     let todos = store.list().await?;
     Ok(web::Json(todos))
+}
+
+async fn list_markdown<S: TodoStore>(store: web::Data<S>) -> Result<HttpResponse> {
+    let todos = store.list().await?;
+
+    let s: Vec<_> = todos.values().map(|todo| format!("* {:?}", todo)).collect();
+    let mut resp = HttpResponse::Ok();
+
+    resp.content_type("text/markdown");
+
+    Ok(resp.body(s.join("")))
 }
 
 /// A request to the [`create`] endpoint
@@ -211,6 +222,8 @@ async fn delete<S: TodoStore>(
 fn todo_app<S: TodoStore + 'static>(store: S) -> impl FnOnce(&mut ServiceConfig) {
     move |cfg: &mut ServiceConfig| {
         cfg.route("/", web::get().to(index))
+            // use the built-in guard::Header function to match an exact header value
+            .route("/todo", web::get().guard(guard::Header("Accept", "text/markdown")).to(list_markdown::<S>))
             .route("/todo", web::get().to(list::<S>))
             .route("/todo", web::post().to(create::<S>))
             .route("/todo/{todo_id}/done", web::post().to(mark_done::<S>))
@@ -250,11 +263,22 @@ mod tests {
     use std::collections::BTreeMap;
     use std::str;
     use std::sync::Arc;
+    use actix_web::http::header::ACCEPT;
 
     async fn test_app() -> impl Service<Request, Response = ServiceResponse<BoxBody>, Error = Error> {
         let store = Arc::new(MemoryStorage::default());
 
         test::init_service(App::new().configure(todo_app(store.clone()))).await
+    }
+
+    async fn get_string_with_accept_header(
+        app: impl Service<Request, Response = ServiceResponse<BoxBody>, Error = Error>,
+        uri: &str,
+        accept_header: &str,
+    ) -> String {
+        let req = test::TestRequest::get().insert_header((ACCEPT, accept_header)).uri(uri).to_request();
+        let resp = test::call_and_read_body(&app, req).await;
+        String::from_utf8(resp.to_vec()).unwrap()
     }
 
     async fn get_string(
@@ -363,6 +387,20 @@ mod tests {
         let expected = vec![(1, Todo::new("testing".to_string()))];
 
         assert_eq!(expected, actual);
+    }
+
+    #[actix_rt::test]
+    async fn test_create_and_list_markdown() {
+        let mut app = test_app().await;
+
+        create_todo(&mut app, "testing").await;
+        let todos = get_string_with_accept_header(&mut app, "/todo", "text/markdown").await;
+
+        let expected = "* Todo { title: \"testing\", status: Pending }";
+
+        // you can compare a String with an &str
+        // (the String gets converted to an &str automatically)
+        assert_eq!(expected, todos);
     }
 
     #[actix_rt::test]
