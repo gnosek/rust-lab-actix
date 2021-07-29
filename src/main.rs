@@ -6,6 +6,7 @@ use actix_web::web::{Data, ServiceConfig};
 use actix_web::{guard, web, HttpResponse, Responder, ResponseError, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use actix_web::http::header::ACCEPT;
 
 /// Pluggable storage backend implementations
 mod storage;
@@ -194,6 +195,34 @@ async fn delete<S: TodoStore>(
     }
 }
 
+/// Check whether the `Accept` header contains `text/markdown`
+fn accept_matches_markdown(req: &guard::GuardContext) -> bool {
+    // the IntelliJ Rust plugin gets confused about the type of `req.headers()`
+    // this occasionally happens with generic-heavy code :(
+    //
+    // Let's unwrap this expression manually:
+    // - req.head().headers().get(header) returns an Option<HeaderValue>
+    // - Option::and_then returns:
+    //   - None if the original option was None (i.e. there was no header by that name)
+    //   - the result of the closure (which must be an Option<T>) otherwise
+    //     (the closure parameter is the contents of the Some variant of the option)
+    // - HeaderValue::to_str returns a Result<String, _>, i.e. either a string representation
+    //   of the header (if possible), or an error type if e.g. the value is not valid UTF-8
+    // - Result::ok() converts a Result<T, E> to an Option<T> (discarding the specific error)
+    //
+    // The end result of this expression is an Option<String> (despite IntelliJ claiming
+    // it's a Result<_, RedisError>), which contains the contents of the Accept header
+    // as a String (if the header is there and can be represented as a Rust string).
+    let accept = req.head().headers().get(ACCEPT).and_then(|h| h.to_str().ok());
+
+    // if the header is there, check if it contains "text/markdown" anywhere
+    if let Some(accept) = accept {
+        return accept.contains("text/markdown")
+    }
+
+    false
+}
+
 /// A helper function to configure the application with different data stores
 ///
 /// Functions returning [`actix_web::App`] instances are not supported by Actix (some types
@@ -224,6 +253,10 @@ fn todo_app<S: TodoStore + 'static>(store: S) -> impl FnOnce(&mut ServiceConfig)
         cfg.route("/", web::get().to(index))
             // use the built-in guard::Header function to match an exact header value
             .route("/todo", web::get().guard(guard::Header("Accept", "text/markdown")).to(list_markdown::<S>))
+            // use a custom guard function where we provide our own logic for accepting the request
+            // this second guard matches everything the first one does, so the first one
+            // is now unnecessary but leave it as an example
+            .route("/todo", web::get().guard(accept_matches_markdown).to(list_markdown::<S>))
             .route("/todo", web::get().to(list::<S>))
             .route("/todo", web::post().to(create::<S>))
             .route("/todo/{todo_id}/done", web::post().to(mark_done::<S>))
@@ -400,6 +433,17 @@ mod tests {
 
         // you can compare a String with an &str
         // (the String gets converted to an &str automatically)
+        assert_eq!(expected, todos);
+    }
+
+    #[actix_rt::test]
+    async fn test_create_and_list_markdown_ext() {
+        let mut app = test_app().await;
+
+        create_todo(&mut app, "testing").await;
+        let todos = get_string_with_accept_header(&mut app, "/todo", "text/markdown+extra").await;
+
+        let expected = "* Todo { title: \"testing\", status: Pending }";
         assert_eq!(expected, todos);
     }
 
