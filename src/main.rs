@@ -2,7 +2,7 @@
 use crate::storage::redis::RedisStorage;
 use crate::storage::{Todo, TodoStore};
 use actix_web::http::StatusCode;
-use actix_web::web::ServiceConfig;
+use actix_web::web::{Data, ServiceConfig};
 use actix_web::{web, HttpResponse, Responder, ResponseError, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -215,7 +215,7 @@ fn todo_app<S: TodoStore + 'static>(store: S) -> impl FnOnce(&mut ServiceConfig)
             .route("/todo", web::post().to(create::<S>))
             .route("/todo/{todo_id}/done", web::post().to(mark_done::<S>))
             .route("/todo/{todo_id}", web::delete().to(delete::<S>))
-            .data(store);
+            .app_data(Data::new(store));
     }
 }
 
@@ -241,61 +241,62 @@ mod tests {
     use crate::storage::memory::MemoryStorage;
     use crate::storage::{Todo, TodoStatus};
     use crate::{todo_app, CreateRequest, CreateResponse};
-    use actix_http::{Error, Request};
-    use actix_web::dev::{Body, Service, ServiceResponse};
-    use actix_web::{test, App};
+    use actix_http::Request;
+    use actix_web::dev::{Service, ServiceResponse};
+    use actix_web::body::BoxBody;
+    use actix_web::{test, App, Error};
     use serde::de::DeserializeOwned;
     use serde::Serialize;
     use std::collections::BTreeMap;
     use std::str;
     use std::sync::Arc;
 
-    async fn test_app() -> impl Service<Request, Response = ServiceResponse<Body>, Error = Error> {
+    async fn test_app() -> impl Service<Request, Response = ServiceResponse<BoxBody>, Error = Error> {
         let store = Arc::new(MemoryStorage::default());
 
         test::init_service(App::new().configure(todo_app(store.clone()))).await
     }
 
     async fn get_string(
-        app: impl Service<Request, Response = ServiceResponse<Body>, Error = Error>,
+        app: impl Service<Request, Response = ServiceResponse<BoxBody>, Error = Error>,
         uri: &str,
     ) -> String {
         let req = test::TestRequest::get().uri(uri).to_request();
-        let resp = test::read_response(&app, req).await;
+        let resp = test::call_and_read_body(&app, req).await;
         String::from_utf8(resp.to_vec()).unwrap()
     }
 
     async fn get_json<Resp>(
-        app: impl Service<Request, Response = ServiceResponse<Body>, Error = Error>,
+        app: impl Service<Request, Response = ServiceResponse<BoxBody>, Error = Error>,
         uri: &str,
     ) -> Resp
     where
         Resp: DeserializeOwned,
     {
         let req = test::TestRequest::get().uri(uri).to_request();
-        test::read_response_json(&app, req).await
+        test::call_and_read_body_json(&app, req).await
     }
 
     async fn post(
-        app: impl Service<Request, Response = ServiceResponse<Body>, Error = Error>,
+        app: impl Service<Request, Response = ServiceResponse<BoxBody>, Error = Error>,
         uri: &str,
     ) {
         let req = test::TestRequest::post().uri(uri).to_request();
 
-        test::read_response(&app, req).await;
+        test::call_and_read_body(&app, req).await;
     }
 
     async fn delete(
-        app: impl Service<Request, Response = ServiceResponse<Body>, Error = Error>,
+        app: impl Service<Request, Response = ServiceResponse<BoxBody>, Error = Error>,
         uri: &str,
     ) {
         let req = test::TestRequest::delete().uri(uri).to_request();
 
-        test::read_response(&app, req).await;
+        test::call_and_read_body(&app, req).await;
     }
 
     async fn post_json<Req, Resp>(
-        app: impl Service<Request, Response = ServiceResponse<Body>, Error = Error>,
+        app: impl Service<Request, Response = ServiceResponse<BoxBody>, Error = Error>,
         uri: &str,
         body: &Req,
     ) -> Resp
@@ -308,11 +309,11 @@ mod tests {
             .set_json(body)
             .to_request();
 
-        test::read_response_json(&app, req).await
+        test::call_and_read_body_json(&app, req).await
     }
 
     async fn create_todo(
-        app: impl Service<Request, Response = ServiceResponse<Body>, Error = Error>,
+        app: impl Service<Request, Response = ServiceResponse<BoxBody>, Error = Error>,
         title: &str,
     ) -> usize {
         let req = CreateRequest {
