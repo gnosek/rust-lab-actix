@@ -61,7 +61,7 @@ impl RedisStorage {
     /// Since it involves I/O, this method is both asynchronous and fallible
     pub async fn new(uri: &str) -> Result<Self> {
         let client = redis::Client::open(uri)?;
-        let connection = client.get_tokio_connection_manager().await?;
+        let connection = client.get_connection_manager().await?;
 
         Ok(Self { connection })
     }

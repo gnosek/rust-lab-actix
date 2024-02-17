@@ -15,12 +15,12 @@ edition = "2018"
 redis_tests = []
 
 [dependencies]
-actix-http = "3.2.2"
-actix-web = "4.2.1"
+actix-http = "3.6.0"
+actix-web = "4.5.1"
 actix-rt = "2"
 async-trait = "*"
 futures = "0.3"
-redis = { version = "0.21.6", features = ["aio", "tokio-comp", "connection-manager"] }
+redis = { version = "0.24.0", features = ["aio", "tokio-comp", "connection-manager"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "1"
